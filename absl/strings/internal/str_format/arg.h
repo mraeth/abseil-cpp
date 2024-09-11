@@ -350,15 +350,31 @@ IntegralConvertResult FormatConvertImpl(uint128 v,
 
 // This function needs to be a template due to ambiguity regarding type
 // conversions.
-template <typename T, enable_if_t<std::is_same<T, bool>::value, int> = 0>
+// Define a helper to handle bool conversion regardless of the compiler
+template <typename T>
+struct is_cuda_bool : std::false_type {}; 
+
+#ifdef __CUDACC__
+template <>
+struct is_cuda_bool<bool> : std::true_type {}; 
+#endif
+
+template <typename T, std::enable_if_t<std::is_same<T, bool>::value, int> = 0>
 IntegralConvertResult FormatConvertImpl(T v, FormatConversionSpecImpl conv,
                                         FormatSinkImpl* sink) {
   if (conv.conversion_char() == FormatConversionCharInternal::v) {
-    return {ConvertBoolArg(v, sink)};
+    // Use static_cast only if T is not a CUDA-specific bool
+    if constexpr (is_cuda_bool<T>::value) {
+      return {ConvertBoolArg(static_cast<bool>(v), sink)};
+    } else {
+      return {ConvertBoolArg(v, sink)};
+    }   
   }
 
   return FormatConvertImpl(static_cast<int>(v), conv, sink);
 }
+
+
 
 // We provide this function to help the checker, but it is never defined.
 // FormatArgImpl will use the underlying Convert functions instead.
